@@ -1,3 +1,4 @@
+
 import { SensorReadings } from '../types';
 
 // Simulates reading from an Arduino/ESP32 via Serial/WebSocket
@@ -10,6 +11,12 @@ export const generateMockReading = (prev: SensorReadings | null): SensorReadings
       ammonia: 0.2,
       sulfur: 0.1,
       ethanol: 0,
+      ether: 0,
+      hydrogen: 5,
+      methane: 2,
+      isoprene: 50, // ppb
+      carbonMonoxide: 0.5, // ppm
+      nitricOxide: 15, // ppb
       temperature: 36.5,
       humidity: 45,
       timestamp: now,
@@ -24,8 +31,6 @@ export const generateMockReading = (prev: SensorReadings | null): SensorReadings
   };
 
   // Simulate environmental baseline drift (Calibration logic)
-  // If humidity rises, gas sensors often read slightly higher due to moisture interference.
-  // We simulate this raw data drift which the "AI" or "backend" would normally filter.
   const newHumidity = drift(prev.humidity, 30, 80, 2);
   const humidityFactor = newHumidity > 60 ? 1.05 : 1.0; 
 
@@ -34,6 +39,15 @@ export const generateMockReading = (prev: SensorReadings | null): SensorReadings
     ammonia: drift(prev.ammonia, 0.1, 5.0, 0.05),
     sulfur: drift(prev.sulfur, 0.05, 2.0, 0.02),
     ethanol: drift(prev.ethanol, 0, 300, 1.5),
+    // New Gases
+    ether: drift(prev.ether, 0, 100, 0.5),
+    hydrogen: drift(prev.hydrogen, 2, 80, 1.0), // ppm, fluctuates with digestion
+    methane: drift(prev.methane, 0, 40, 0.5),
+    
+    isoprene: drift(prev.isoprene, 20, 600, 5), // ppb
+    carbonMonoxide: drift(prev.carbonMonoxide, 0, 15, 0.2), // ppm
+    nitricOxide: drift(prev.nitricOxide, 5, 100, 2), // ppb
+    
     temperature: drift(prev.temperature, 36.0, 37.5, 0.1),
     humidity: newHumidity,
     timestamp: now,
