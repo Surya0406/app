@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { SensorReadings, SymptomState, AnalysisReport, AppThresholds, DEFAULT_THRESHOLDS } from '../types';
 
@@ -18,7 +19,7 @@ export const analyzeBreathData = async (
 
     const symptomList = Object.entries(symptoms)
       .filter(([_, value]) => value)
-      .map(([key]) => key)
+      .map(([key]) => key.replace(/([A-Z])/g, ' $1').toLowerCase())
       .join(", ");
 
     const prompt = `
@@ -27,10 +28,16 @@ export const analyzeBreathData = async (
       Analyze the following RUN-TIME SENSOR INPUTS (biomarkers) and user-reported Symptoms to determine the probability of specific diseases.
       
       INPUT DATA SNAPSHOT:
-      - Acetone: ${readings.acetone.toFixed(2)} ppm (User defined critical threshold: > ${thresholds.acetone.critical})
-      - Ammonia: ${readings.ammonia.toFixed(2)} ppm (User defined critical threshold: > ${thresholds.ammonia.critical})
-      - Sulfur Compounds: ${readings.sulfur.toFixed(2)} ppm (User defined critical threshold: > ${thresholds.sulfur.critical})
-      - Ethanol: ${readings.ethanol.toFixed(2)} ppm (User defined critical threshold: > ${thresholds.ethanol.critical})
+      - Acetone: ${readings.acetone.toFixed(2)} ppm (Threshold: > ${thresholds.acetone.critical})
+      - Ammonia: ${readings.ammonia.toFixed(2)} ppm (Threshold: > ${thresholds.ammonia.critical})
+      - Sulfur Compounds: ${readings.sulfur.toFixed(2)} ppm (Threshold: > ${thresholds.sulfur.critical})
+      - Ethanol: ${readings.ethanol.toFixed(2)} ppm (Threshold: > ${thresholds.ethanol.critical})
+      - Ether: ${readings.ether.toFixed(2)} ppm (Threshold: > ${thresholds.ether.critical})
+      - Hydrogen: ${readings.hydrogen.toFixed(2)} ppm (Threshold: > ${thresholds.hydrogen.critical})
+      - Methane: ${readings.methane.toFixed(2)} ppm (Threshold: > ${thresholds.methane.critical})
+      - Isoprene: ${readings.isoprene.toFixed(2)} ppb (Threshold: > ${thresholds.isoprene.critical})
+      - Nitric Oxide: ${readings.nitricOxide.toFixed(2)} ppb (Threshold: > ${thresholds.nitricOxide.critical})
+      - Carbon Monoxide: ${readings.carbonMonoxide.toFixed(2)} ppm (Threshold: > ${thresholds.carbonMonoxide.critical})
       - Environmental: ${readings.temperature.toFixed(1)}°C, ${readings.humidity.toFixed(1)}% Humidity
 
       REPORTED SYMPTOMS: ${symptomList || "None reported"}
@@ -38,17 +45,9 @@ export const analyzeBreathData = async (
       TASK:
       1. Provide a differential diagnosis based on the inputs.
       2. For each possible disease, estimate a PROBABILITY PERCENTAGE (0-100%) based on the strength of the biomarker correlation.
-         - Example: Acetone 4.0ppm + Thirst = Diabetes (95%)
-         - Example: Low markers = Healthy (98%)
       3. Determine the overall urgency/risk level.
-      4. EXPLAINABLE AI REQUIREMENT: In the 'explanation' field, you MUST explicitly cite the specific sensor values and compare them to their thresholds to justify the diagnosis.
-         - Format example: "Acetone levels (X.XX ppm) significantly exceeded the critical threshold of ${thresholds.acetone.critical} ppm, which is the primary indicator for..."
-         - Be specific about WHY the risk is High/Low.
-      
-      REFERENCE THRESHOLDS (CONFIGURED BY USER):
-      - Acetone: Warning ${thresholds.acetone.warning}, Critical ${thresholds.acetone.critical}
-      - Ammonia: Warning ${thresholds.ammonia.warning}, Critical ${thresholds.ammonia.critical}
-      - Sulfur: Warning ${thresholds.sulfur.warning}, Critical ${thresholds.sulfur.critical}
+      4. EXPLAINABLE AI REQUIREMENT: In the 'explanation' field, you MUST explicitly cite the specific sensor values and compare them to their thresholds.
+      5. Provide structured insights for each biomarker.
       
       Return a JSON response.
     `;
@@ -78,9 +77,23 @@ export const analyzeBreathData = async (
                 type: Type.STRING, 
                 description: "Detailed medical reasoning. CRITICAL: You must explicitly state which values crossed which thresholds." 
             },
-            recommendation: { type: Type.STRING }
+            recommendation: { type: Type.STRING },
+            biomarkerInsights: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  value: { type: Type.NUMBER },
+                  unit: { type: Type.STRING },
+                  status: { type: Type.STRING, enum: ['Normal', 'Elevated', 'Critical'] },
+                  interpretation: { type: Type.STRING }
+                },
+                required: ["name", "value", "unit", "status", "interpretation"]
+              }
+            }
           },
-          required: ["riskLevel", "summary", "diseases", "explanation", "recommendation"]
+          required: ["riskLevel", "summary", "diseases", "explanation", "recommendation", "biomarkerInsights"]
         }
       }
     });
@@ -88,16 +101,25 @@ export const analyzeBreathData = async (
     const text = response.text;
     if (!text) throw new Error("No response from AI");
 
-    return JSON.parse(text) as AnalysisReport;
+    const analysis = JSON.parse(text);
+
+    return {
+      ...analysis,
+      id: Date.now().toString(),
+      timestamp: Date.now()
+    } as AnalysisReport;
 
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
     return {
+      id: Date.now().toString(),
+      timestamp: Date.now(),
       riskLevel: "Low",
       summary: "Analysis Failed",
       diseases: [],
       explanation: "The AI service is currently unavailable or the API key is missing. Please check your connection.",
-      recommendation: "Retry analysis."
+      recommendation: "Retry analysis.",
+      biomarkerInsights: []
     };
   }
 };
